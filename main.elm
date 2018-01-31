@@ -2,17 +2,64 @@ module Main exposing (main)
 
 import List
 import Html exposing (..)
+import Html.Attributes exposing (..)
+import Html.Events exposing (onClick)
+import Http exposing (send, get, Error(..))
+import Json.Encode
+import Json.Decode
+import Tuple exposing (first, second)
+
+
+main =
+    program
+        { init = { name = "", owed = 0, bill = defaultItems } ! [] 
+        , view = view
+        , update = update
+        , subscriptions = \x -> Sub.none
+        }
 
 
 type alias Model =
-    { name : String
-    , owed : float
-    , bill : List ( Bool, String, Float )
-    }
+    { name : String, owed : Float, bill : List Item }
 
 
-init =
-    { name = "", owed = 0, bill = defaultItems }
+type Claim
+    = Unclaimed
+    | ClaimedBy String
+
+
+type alias Item =
+    { description : String, price : Float, claim : Claim }
+
+
+type Msg
+    = ToggleClaim String
+    | NoOp
+
+update : Msg -> Model -> (Model, Cmd msg)
+update x y = y ! []
+
+-- encodeBill =
+-- decodeBill =
+--
+-- urlBase =
+--     "https://pebble-timetracking.firebaseio.com/bill"
+--
+--
+--putRequest bill =
+--    Http.request
+--        { method = "PUT"
+--        , headers = []
+--        , url = urlBase ++ ".json"
+--        , body = Http.jsonBody (encodeBill bill)
+--        , expect = Http.expectJson decodeActivities
+--        , timeout = Nothing
+--        , withCredentials = False
+--        }
+
+
+defaultItems =
+    List.map (\x -> (Item (first x) (second x) Unclaimed)) items
 
 
 items =
@@ -43,24 +90,29 @@ items =
     ]
 
 
-defaultItems =
-    map (\x -> ( False, x.first, x.second )) items
-
-
 view : Model -> Html Msg
 view m =
-    List.map itemRow m.bill
-        |> div []
+    div [] 
+    (List.map itemRow m.bill)
 
 
-itemRow : ( Bool, String, Float )
-itemRow ( paidFor, description, price ) =
-    div []
-        [ input
-            [ type_ "checkbox"
-            , checked
-            , onClick ToggleAccuracy
+itemRow : Item -> Html Msg
+itemRow item =
+    let
+        c =
+            case item.claim of
+                Unclaimed ->
+                    False
+
+                ClaimedBy _ ->
+                    True
+    in
+        div []
+            [ input
+                [ type_ "checkbox"
+                , checked c
+                , onClick (ToggleClaim item.description)
+                ]
+                []
+            , text "Mine"
             ]
-            []
-        , text "Mine"
-        ]
