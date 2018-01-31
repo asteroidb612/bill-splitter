@@ -122,27 +122,32 @@ update msg model =
 
 view : Model -> Html Msg
 view m =
+    let itemRow item = case item.claim of
+        ClaimedBy name ->
+            div []
+                [ input
+                    [ type_ "checkbox"
+                    , checked True 
+                    , onClick (ToggleClaim item.description)
+                    , disabled (name /= m.name)
+                    ]
+                    []
+                , text item.description
+                , text (toString item.price)
+                ]
+        Unclaimed -> 
+            div []
+                [ input
+                    [ type_ "checkbox"
+                    , checked False
+                    , onClick (ToggleClaim item.description)
+                    ]
+                    []
+                , text item.description
+                ]
+
+    in
     div []
         (List.map itemRow (Dict.values m.bill))
 
 
-itemRow : Item -> Html Msg
-itemRow item =
-    let
-        c =
-            case item.claim of
-                Unclaimed ->
-                    False
-
-                ClaimedBy _ ->
-                    True
-    in
-        div []
-            [ input
-                [ type_ "checkbox"
-                , checked c
-                , onClick (ToggleClaim item.description)
-                ]
-                []
-            , text "Mine"
-            ]
