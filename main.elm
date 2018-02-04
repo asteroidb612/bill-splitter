@@ -10,11 +10,18 @@ import Json.Encode
 import Json.Decode
 import Tuple exposing (first, second)
 import Maybe exposing (Maybe(..))
+import Material
+import Material.Options as Options
+import Material.Scheme
+import Material.Layout as Layout
+import Material.Color as Color
+import Material.List as Lists
+import Material.Toggles as Toggles
 
 
 main =
     program
-        { init = { name = "", owed = 0, bill = defaultDict } ! []
+        { init = { name = "", owed = 0, bill = defaultDict, mdl = Material.model } ! []
         , view = view
         , update = update
         , subscriptions = \x -> Sub.none
@@ -55,7 +62,7 @@ defaultDict =
 
 
 type alias Model =
-    { name : String, owed : Float, bill : Dict String Item }
+    { name : String, owed : Float, bill : Dict String Item, mdl : Material.Model }
 
 
 type Claim
@@ -70,6 +77,7 @@ type alias Item =
 type Msg
     = ToggleClaim String
     | NoOp
+    | Mdl (Material.Msg Msg)
 
 
 update : Msg -> Model -> ( Model, Cmd msg )
@@ -78,11 +86,13 @@ update msg model =
         ToggleClaim desc ->
             let
                 replace oldItem =
-                    case oldItem of -- I think there's an Elm default to replace this
+                    case oldItem of
+                        -- I think there's an Elm default to replace this
                         Nothing ->
                             Nothing
 
-                        Just item -> --This should probably be two helpers
+                        Just item ->
+                            --This should probably be two helpers
                             Just
                                 { item
                                     | claim =
@@ -94,7 +104,7 @@ update msg model =
                                                 Unclaimed
                                 }
             in
-                {model | bill = Dict.update desc replace model.bill} ! []
+                { model | bill = Dict.update desc replace model.bill } ! []
 
         _ ->
             model ! []
@@ -121,33 +131,56 @@ update msg model =
 
 
 view : Model -> Html Msg
-view m =
-    let itemRow item = case item.claim of
-        ClaimedBy name ->
-            div []
-                [ input
-                    [ type_ "checkbox"
-                    , checked True 
-                    , onClick (ToggleClaim item.description)
-                    , disabled (name /= m.name)
-                    ]
-                    []
-                , text item.description
-                , text (toString item.price)
-                ]
-        Unclaimed -> 
-            div []
-                [ input
-                    [ type_ "checkbox"
-                    , checked False
-                    , onClick (ToggleClaim item.description)
-                    ]
-                    []
-                , text item.description
-                ]
+view model =
+    Material.Scheme.topWithScheme Color.Teal Color.LightGreen <|
+        Layout.render Mdl
+            model.mdl
+            [ Layout.fixedHeader
+            ]
+            { header = [ h2 [ style [ ( "padding", "2rem" ) ] ] [ text "Bill" ] ]
+            , drawer = []
+            , tabs = ( [], [] )
+            , main = [ viewBody model ]
+            }
 
+
+viewBody : Model -> Html Msg
+viewBody model =
+    let
+        itemRow item =
+            case item.claim of
+                Unclaimed ->
+                    Lists.ul []
+                        [ Lists.li []
+                            [ Lists.content [] [ text item.description ]
+                            , Lists.content2 []
+                                [ Toggles.checkbox Mdl
+                                    [ 4 ]
+                                    model.mdl
+                                    [ Toggles.value True
+                                    , Options.onToggle (ToggleClaim item.description)
+                                    ]
+                                    []
+                                ]
+                            ]
+                        ]
+
+                ClaimedBy name ->
+                    Lists.ul []
+                        [ Lists.li []
+                            [ Lists.content [] [ text item.description ]
+                            , Lists.content2 []
+                                [ Toggles.checkbox Mdl
+                                    [ 4 ]
+                                    model.mdl
+                                    [ Toggles.value False
+                                    , Options.onToggle (ToggleClaim item.description)
+                                    ]
+                                    []
+                                ]
+                            , Lists.content2 [] [ text name ]
+                            ]
+                        ]
     in
-    div []
-        (List.map itemRow (Dict.values m.bill))
-
-
+        div []
+            (List.map itemRow (Dict.values model.bill))
