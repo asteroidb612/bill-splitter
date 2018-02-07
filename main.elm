@@ -6,8 +6,8 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
 import Http exposing (send, get, Error(..))
-import Json.Encode
-import Json.Decode
+import Json.Encode as E
+import Json.Decode as D
 import Tuple exposing (first, second)
 import Maybe exposing (Maybe(..))
 import Material
@@ -17,42 +17,46 @@ import Material.Layout as Layout
 import Material.Color as Color
 import Material.List as Lists
 import Material.Toggles as Toggles
+import FormatNumber exposing (format)
+import FormatNumber.Locales exposing (usLocale)
+import Material.Chip as Chip
 
 
 main =
     program
-        { init = { name = "", owed = 0, bill = defaultDict, mdl = Material.model } ! []
+        { init = { name = "", owed = 0, bill = defaultDict, mdl = Material.model, claimedItems = [] } ! []
         , view = view
         , update = update
-        , subscriptions = \x -> Sub.none
+        , subscriptions = \model -> Layout.subs Mdl model.mdl
         }
 
 
 items =
     [ ( "Bone Marrow", 17 )
-    , ( "French Fries", 8 )
-    , ( "HH Abita Purple Haze", 5 )
-    , ( "HHThe Screws Are Loose", 10 )
-    , ( "HHThe Screws Are Loose", 10 )
-    , ( "HH Craft Lager", 10 )
-    , ( "HH Craft Lager", 10 )
-    , ( "Outer Space Canoe 16 oz", 8 )
-    , ( "HH The Screws are Loose", 5 )
-    , ( "French Fries", 8 )
-    , ( "Chicken Wings, side of arugala salad", 12 )
-    , ( "Open Kitchedn Salad", 2 )
+    , ( "Blue Cheeseburger w/ Salad", 16 )
+    , ( "Burger w/ Salad", 16 )
     , ( "Charcuterie platter", 16 )
+    , ( "Chicken Wings, side of arugala salad", 12 )
+    , ( "Fish and Chips", 18 )
+    , ( "French Fries 1", 8 )
+    , ( "French Fries 2", 8 )
+    , ( "HH Abita Purple Haze", 5 )
+    , ( "HH Craft Lager 1", 5 )
+    , ( "HH Craft Lager 2", 5 )
+    , ( "HH The Screws Are Loose 1", 5 )
+    , ( "HH The Screws Are Loose 2", 5 )
+    , ( "HH The Screws are Loose 3", 5 )
+    , ( "HH The Screws are Loose 4", 5 )
+    , ( "HH Hef-D ", 5 )
+    , ( "Hef-D 16oz", 7.5 )
+    , ( "Mac and Cheese", 15 )
+    , ( "Open Kitchen Salad", 2 )
+    , ( "Outer Space Canoe 16 oz", 8 )
+    , ( "Spicy Burger w/ Fries", 17 )
+    , ( "Stout as a Service", 6 )
+    , ( "Tossed Salad", 10 )
     , ( "Waygu Burger with fries, medium", 20 )
     , ( "Waygu Burger with salad, white cheddar", 20 )
-    , ( "Blue Cheeseburger w/ Salad", 16 )
-    , ( "Spicy Burger w/ Fries", 17 )
-    , ( "Burger w/ Salad", 16 )
-    , ( "HH The Screws are Loose", 5 )
-    , ( "Mac and Cheese", 15 )
-    , ( "Fish and Chips", 18 )
-    , ( "Tossed Salad", 10 )
-    , ( "Stout as a Service", 6 )
-    , ( "Hef-D 160z", 7.5 )
     ]
 
 
@@ -62,7 +66,7 @@ defaultDict =
 
 
 type alias Model =
-    { name : String, owed : Float, bill : Dict String Item, mdl : Material.Model }
+    { name : String, owed : Float, bill : Dict String Item, mdl : Material.Model, claimedItems : List Item }
 
 
 type Claim
@@ -85,14 +89,35 @@ update msg model =
     case msg of
         ToggleClaim desc ->
             let
+                includeItem x =
+                    case x.claim of
+                        Unclaimed ->
+                            False
+
+                        ClaimedBy name ->
+                            name == model.name
+
+                newBill =
+                    Dict.update desc replace model.bill
+
+                newClaimedItems =
+                    Dict.toList newBill
+                        |> List.map second
+                        |> List.filter includeItem
+
+                newSum =
+                    newClaimedItems
+                        |> List.map .price
+                        |> List.sum
+
                 replace oldItem =
                     case oldItem of
-                        -- I think there's an Elm default to replace this
+                        -- TODO I think there's an Elm default to replace this
                         Nothing ->
                             Nothing
 
                         Just item ->
-                            --This should probably be two helpers
+                            -- TODO This should probably be two helpers
                             Just
                                 { item
                                     | claim =
@@ -104,44 +129,94 @@ update msg model =
                                                 Unclaimed
                                 }
             in
-                { model | bill = Dict.update desc replace model.bill } ! []
+                { model
+                    | bill = newBill
+                    , owed = newSum
+                    , claimedItems = newClaimedItems
+                }
+                    ! [putRequest newBill]
 
         _ ->
             model ! []
 
 
 
--- encodeBill =
--- decodeBill =
---
--- urlBase =
---     "https://pebble-timetracking.firebaseio.com/bill"
---
---
---putRequest bill =
---    Http.request
---        { method = "PUT"
---        , headers = []
---        , url = urlBase ++ ".json"
---        , body = Http.jsonBody (encodeBill bill)
---        , expect = Http.expectJson decodeActivities
---        , timeout = Nothing
---        , withCredentials = False
---        }
+ownerOf item = case item.aclaim of
+                   Unclaimed -> ""
+                   ClaimedBy name -> name
+
+encodeItem item = E.object [("description", E.string item.description)
+                        ,("owner", E.string <| ownerOf item)
+                        ,("price", E.float item.price)]
+encodeBill bill = Dict.toList bill
+                   |> List.map (\string item -> (string, encodeItem item))
+                   |> E.object
+
+discernClaim jsonClaim = case jsonClaim of
+                          "" -> Unclaimed
+                          name -> ClaimedBy name
+decodeClaim = D.map discernClaim D.string
+decodeItem = D.map3 Item (D.field "description" D.string) (D.field "price" D.float) (D.field "claim" decodeClaim)
+decodeBill = D.dict decodeItem
+
+urlBase =
+    "https://pebble-timetracking.firebaseio.com/bill"
+
+
+putRequest bill =
+   Http.request
+       { method = "PUT"
+       , headers = []
+       , url = urlBase ++ ".json"
+       , body = Http.jsonBody (encodeBill bill)
+       , expect = Http.expectJson decodeBill
+       , timeout = Nothing
+       , withCredentials = False
+       }
 
 
 view : Model -> Html Msg
 view model =
-    Material.Scheme.topWithScheme Color.Teal Color.LightGreen <|
-        Layout.render Mdl
-            model.mdl
-            [ Layout.fixedHeader
-            ]
-            { header = [ h2 [ style [ ( "padding", "2rem" ) ] ] [ text "Bill" ] ]
-            , drawer = []
-            , tabs = ( [], [] )
-            , main = [ viewBody model ]
-            }
+    let
+        chip item =
+            Chip.span
+                [ Options.css "margin" "10px 5px"
+                , Chip.deleteIcon "cancel"
+                , Chip.deleteClick (ToggleClaim item.description)
+                ]
+                [ Chip.content []
+                    [ text (item.description ++ " $" ++ toString item.price) ]
+                ]
+
+        common = [("vertical-align", "middle"), ("text-align", "center"), ("display", "inline-block")]
+        spot x = span [style <| ("margin", "0 .8em") :: common] [text x]
+        num x = span [style <| ("font-size", "2em") :: common] [text x]
+
+        topText = if List.isEmpty model.claimedItems
+                  then h3 [] [text "Mary's Birthday Dinner at the Halford"]
+                  else div []
+                  [ num <| "$" ++ format usLocale model.owed
+                  , spot <| "+ 9% Sales Tax = "
+                  , num <| "$" ++ format usLocale (model.owed * 1.09)
+                  , spot <| "+ 18% Gratuity ="
+                  , num <| "$" ++ format usLocale (model.owed * 1.18 * 1.09)
+                  ]
+    in
+        Material.Scheme.topWithScheme Color.Teal Color.LightGreen <|
+            Layout.render Mdl
+                model.mdl
+                [ Layout.fixedHeader
+                ]
+                { header =
+                    [ div [ style [ ( "padding", "2rem" ) ] ] <|
+                         topText  :: List.map chip model.claimedItems
+                    ]
+                , drawer = []
+                , tabs = ( [], [] )
+                , main =
+                    [ viewBody model
+                    ]
+                }
 
 
 viewBody : Model -> Html Msg
@@ -150,8 +225,22 @@ viewBody model =
         itemRow item =
             case item.claim of
                 Unclaimed ->
-                    Lists.ul []
-                        [ Lists.li []
+                    Lists.li []
+                        [ Lists.content [] [ text item.description ]
+                        , Lists.content2 []
+                            [ Toggles.checkbox Mdl
+                                [ 4 ]
+                                model.mdl
+                                [ Toggles.value False
+                                , Options.onToggle (ToggleClaim item.description)
+                                ]
+                                []
+                            ]
+                        ]
+
+                ClaimedBy name ->
+                    if name == model.name then
+                        Lists.li []
                             [ Lists.content [] [ text item.description ]
                             , Lists.content2 []
                                 [ Toggles.checkbox Mdl
@@ -163,24 +252,11 @@ viewBody model =
                                     []
                                 ]
                             ]
-                        ]
-
-                ClaimedBy name ->
-                    Lists.ul []
-                        [ Lists.li []
-                            [ Lists.content [] [ text item.description ]
-                            , Lists.content2 []
-                                [ Toggles.checkbox Mdl
-                                    [ 4 ]
-                                    model.mdl
-                                    [ Toggles.value False
-                                    , Options.onToggle (ToggleClaim item.description)
-                                    ]
-                                    []
-                                ]
-                            , Lists.content2 [] [ text name ]
-                            ]
-                        ]
+                    else
+                        Lists.li [] [ Lists.content [] [ text item.description ] ]
     in
-        div []
-            (List.map itemRow (Dict.values model.bill))
+        (List.map itemRow (Dict.values model.bill))
+            |> Lists.ul []
+            |> \x ->
+                [ x ]
+                    |> div []
