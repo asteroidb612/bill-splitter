@@ -1,5 +1,6 @@
 module Main exposing (main)
-
+import Time
+import Debug
 import List
 import Dict exposing (Dict)
 import Html exposing (..)
@@ -24,17 +25,20 @@ import Material.Chip as Chip
 
 main =
     program
-        { init = { name = "", owed = 0, bill = defaultDict, mdl = Material.model, claimedItems = [] } ! []
+        { init = { name = "ronnie", owed = 0, bill = defaultDict, mdl = Material.model, claimedItems = [], message="" } ! []
         , view = view
         , update = update
-        , subscriptions = \model -> Layout.subs Mdl model.mdl
+        , subscriptions = subscriptions
+
         }
 
 
+subscriptions model = Sub.batch [Layout.subs Mdl model.mdl,
+                                Time.every (300 * Time.millisecond) RefreshBill]
 items =
     [ ( "Bone Marrow", 17 )
-    , ( "Blue Cheeseburger w/ Salad", 16 )
-    , ( "Burger w/ Salad", 16 )
+    , ( "Blue Cheeseburger w Salad", 16 )
+    , ( "Burger w Salad", 16 )
     , ( "Charcuterie platter", 16 )
     , ( "Chicken Wings, side of arugala salad", 12 )
     , ( "Fish and Chips", 18 )
@@ -47,12 +51,12 @@ items =
     , ( "HH The Screws Are Loose 2", 5 )
     , ( "HH The Screws are Loose 3", 5 )
     , ( "HH The Screws are Loose 4", 5 )
-    , ( "HH Hef-D ", 5 )
-    , ( "Hef-D 16oz", 7.5 )
+    , ( "HH HefD ", 5 )
+    , ( "HefD 16oz", 7.5 )
     , ( "Mac and Cheese", 15 )
     , ( "Open Kitchen Salad", 2 )
     , ( "Outer Space Canoe 16 oz", 8 )
-    , ( "Spicy Burger w/ Fries", 17 )
+    , ( "Spicy Burger w Fries", 17 )
     , ( "Stout as a Service", 6 )
     , ( "Tossed Salad", 10 )
     , ( "Waygu Burger with fries, medium", 20 )
@@ -66,7 +70,7 @@ defaultDict =
 
 
 type alias Model =
-    { name : String, owed : Float, bill : Dict String Item, mdl : Material.Model, claimedItems : List Item }
+    { name : String, owed : Float, bill : Dict String Item, mdl : Material.Model, claimedItems : List Item, message : String}
 
 
 type Claim
@@ -82,97 +86,149 @@ type Msg
     = ToggleClaim String
     | NoOp
     | Mdl (Material.Msg Msg)
+    | SaveBill (Result Http.Error (Dict.Dict String Item))
+    | RefreshBill Time.Time
+
+handleError model e =
+    case e of
+        Http.Timeout ->
+            { model | message = "timeout" } ! []
+
+        Http.NetworkError ->
+            { model | message = "network error" } ! []
+
+        Http.BadUrl x ->
+            { model | message = "badurl:\n" ++ x } ! []
+
+        Http.BadStatus x ->
+            { model | message = "badstatus:\n" ++ (toString x) } ! []
+
+        Http.BadPayload x y ->
+            { model | message = "badpayload:\n" ++ x ++ "\n" ++ (toString y) } ! []
 
 
-update : Msg -> Model -> ( Model, Cmd msg )
 update msg model =
-    case msg of
-        ToggleClaim desc ->
-            let
-                includeItem x =
-                    case x.claim of
-                        Unclaimed ->
-                            False
+    let
+        includeItem x =
+            case x.claim of
+                Unclaimed ->
+                    False
 
-                        ClaimedBy name ->
-                            name == model.name
+                ClaimedBy name ->
+                    name == model.name
+    in
+        case msg of
+            ToggleClaim newDescription ->
+                let
+                    newBill =
+                        Dict.update newDescription replace model.bill
 
-                newBill =
-                    Dict.update desc replace model.bill
+                    newClaimedItems =
+                        Dict.toList newBill
+                            |> List.map second
+                            |> List.filter includeItem
 
-                newClaimedItems =
-                    Dict.toList newBill
-                        |> List.map second
-                        |> List.filter includeItem
+                    newSum =
+                        newClaimedItems
+                            |> List.map .price
+                            |> List.sum
 
-                newSum =
-                    newClaimedItems
-                        |> List.map .price
-                        |> List.sum
+                    replace oldItem =
+                        case oldItem of
+                            -- TODO I think there's an Elm default to replace this
+                            Nothing ->
+                                Nothing
 
-                replace oldItem =
-                    case oldItem of
-                        -- TODO I think there's an Elm default to replace this
-                        Nothing ->
-                            Nothing
+                            Just item ->
+                                -- TODO This should probably be two helpers
+                                Just
+                                    { item
+                                        | claim =
+                                            case item.claim of
+                                                Unclaimed ->
+                                                    ClaimedBy model.name
 
-                        Just item ->
-                            -- TODO This should probably be two helpers
-                            Just
-                                { item
-                                    | claim =
-                                        case item.claim of
-                                            Unclaimed ->
-                                                ClaimedBy model.name
+                                                ClaimedBy _ ->
+                                                    Unclaimed
+                                    }
 
-                                            ClaimedBy _ ->
-                                                Unclaimed
-                                }
-            in
-                { model
-                    | bill = newBill
-                    , owed = newSum
-                    , claimedItems = newClaimedItems
-                }
-                    ! [putRequest newBill]
+                    sendBill =
+                        Http.send SaveBill
+                in
+                    { model
+                        | bill = newBill
+                        , owed = newSum
+                        , claimedItems = newClaimedItems
+                    }
+                        ! [ sendBill <| putRequest newBill]
 
-        _ ->
-            model ! []
+            SaveBill (Ok remoteBill) ->
+                { model | bill = remoteBill } ! []
+
+            SaveBill (Err e) -> handleError model e
+            RefreshBill time -> 
+                 model  ! [Http.send SaveBill <| Http.get urlBase decodeBill]
+            _ ->
+                model ! []
+
+ownerOf item =
+    case item.claim of
+        Unclaimed ->
+            ""
+
+        ClaimedBy name ->
+            name
 
 
+encodeItem item =
+    E.object
+        [ ( "description", E.string item.description )
+        , ( "owner", E.string <| ownerOf item )
+        , ( "price", E.float item.price )
+        ]
 
-ownerOf item = case item.aclaim of
-                   Unclaimed -> ""
-                   ClaimedBy name -> name
 
-encodeItem item = E.object [("description", E.string item.description)
-                        ,("owner", E.string <| ownerOf item)
-                        ,("price", E.float item.price)]
-encodeBill bill = Dict.toList bill
-                   |> List.map (\string item -> (string, encodeItem item))
-                   |> E.object
+encodeBill bill =
+    Dict.toList bill
+        |> List.map (\(string, item) -> ( string, encodeItem item ))
+        |> E.object
 
-discernClaim jsonClaim = case jsonClaim of
-                          "" -> Unclaimed
-                          name -> ClaimedBy name
-decodeClaim = D.map discernClaim D.string
-decodeItem = D.map3 Item (D.field "description" D.string) (D.field "price" D.float) (D.field "claim" decodeClaim)
-decodeBill = D.dict decodeItem
+
+discernClaim jsonClaim =
+    case jsonClaim of
+        "" ->
+            Unclaimed
+
+        name ->
+            ClaimedBy name
+
+
+decodeClaim =
+    D.map discernClaim D.string
+
+
+decodeItem =
+    D.map3 Item (D.field "description" D.string) (D.field "price" D.float) (D.field "owner" decodeClaim)
+
+
+decodeBill =
+    D.dict decodeItem
+
 
 urlBase =
-    "https://pebble-timetracking.firebaseio.com/bill"
+    "https://pebble-timetracking.firebaseio.com/bill.json"
 
 
 putRequest bill =
-   Http.request
-       { method = "PUT"
-       , headers = []
-       , url = urlBase ++ ".json"
-       , body = Http.jsonBody (encodeBill bill)
-       , expect = Http.expectJson decodeBill
-       , timeout = Nothing
-       , withCredentials = False
-       }
+    Http.request
+        { method = "PUT"
+        , headers = []
+        , url = urlBase
+        , body = Http.jsonBody (encodeBill bill)
+        , expect = Http.expectJson decodeBill
+        , timeout = Nothing
+        , withCredentials = False
+        }
 
 
 view : Model -> Html Msg
@@ -188,19 +244,27 @@ view model =
                     [ text (item.description ++ " $" ++ toString item.price) ]
                 ]
 
-        common = [("vertical-align", "middle"), ("text-align", "center"), ("display", "inline-block")]
-        spot x = span [style <| ("margin", "0 .8em") :: common] [text x]
-        num x = span [style <| ("font-size", "2em") :: common] [text x]
+        common =
+            [ ( "vertical-align", "middle" ), ( "text-align", "center" ), ( "display", "inline-block" ) ]
 
-        topText = if List.isEmpty model.claimedItems
-                  then h3 [] [text "Mary's Birthday Dinner at the Halford"]
-                  else div []
-                  [ num <| "$" ++ format usLocale model.owed
-                  , spot <| "+ 9% Sales Tax = "
-                  , num <| "$" ++ format usLocale (model.owed * 1.09)
-                  , spot <| "+ 18% Gratuity ="
-                  , num <| "$" ++ format usLocale (model.owed * 1.18 * 1.09)
-                  ]
+        spot x =
+            span [ style <| ( "margin", "0 .8em" ) :: common ] [ text x ]
+
+        num x =
+            span [ style <| ( "font-size", "2em" ) :: common ] [ text x ]
+
+        topText =
+            if List.isEmpty model.claimedItems then
+                h3 [] [ text "Mary's Birthday Dinner at the Halford" ]
+            else
+                div []
+                    [ text model.message
+                    , num <| "$" ++ format usLocale model.owed
+                    , spot <| "+ 9% Sales Tax = "
+                    , num <| "$" ++ format usLocale (model.owed * 1.09)
+                    , spot <| "+ 18% Gratuity ="
+                    , num <| "$" ++ format usLocale (model.owed * 1.18 * 1.09)
+                    ]
     in
         Material.Scheme.topWithScheme Color.Teal Color.LightGreen <|
             Layout.render Mdl
@@ -209,7 +273,8 @@ view model =
                 ]
                 { header =
                     [ div [ style [ ( "padding", "2rem" ) ] ] <|
-                         topText  :: List.map chip model.claimedItems
+                        topText
+                            :: List.map chip model.claimedItems
                     ]
                 , drawer = []
                 , tabs = ( [], [] )
