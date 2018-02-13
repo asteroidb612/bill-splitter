@@ -1,4 +1,5 @@
 module Main exposing (main)
+
 import Time
 import Debug
 import List
@@ -12,12 +13,15 @@ import Json.Decode as D
 import Tuple exposing (first, second)
 import Maybe exposing (Maybe(..))
 import Material
+import Material.Grid as Grid
+import Material.Button as Button
 import Material.Options as Options
 import Material.Scheme
 import Material.Layout as Layout
 import Material.Color as Color
 import Material.List as Lists
 import Material.Toggles as Toggles
+import Material.Textfield as Textfield
 import FormatNumber exposing (format)
 import FormatNumber.Locales exposing (usLocale)
 import Material.Chip as Chip
@@ -25,16 +29,20 @@ import Material.Chip as Chip
 
 main =
     program
-        { init = { name = "ronnie", owed = 0, bill = defaultDict, mdl = Material.model, claimedItems = [], message="" } ! []
+        { init = { name = "", owed = 0, bill = defaultDict, mdl = Material.model, claimedItems = [], message = "", named = False } ! []
         , view = view
         , update = update
         , subscriptions = subscriptions
-
         }
 
 
-subscriptions model = Sub.batch [Layout.subs Mdl model.mdl,
-                                Time.every (300 * Time.millisecond) RefreshBill]
+subscriptions model =
+    Sub.batch
+        [ Layout.subs Mdl model.mdl
+        , Time.every (300 * Time.millisecond) RefreshBill
+        ]
+
+
 items =
     [ ( "Bone Marrow", 17 )
     , ( "Blue Cheeseburger w Salad", 16 )
@@ -70,7 +78,7 @@ defaultDict =
 
 
 type alias Model =
-    { name : String, owed : Float, bill : Dict String Item, mdl : Material.Model, claimedItems : List Item, message : String}
+    { name : String, owed : Float, bill : Dict String Item, mdl : Material.Model, claimedItems : List Item, message : String, named : Bool }
 
 
 type Claim
@@ -88,6 +96,9 @@ type Msg
     | Mdl (Material.Msg Msg)
     | SaveBill (Result Http.Error (Dict.Dict String Item))
     | RefreshBill Time.Time
+    | NameUpdate String
+    | SaveName
+
 
 handleError model e =
     case e of
@@ -160,16 +171,26 @@ update msg model =
                         , owed = newSum
                         , claimedItems = newClaimedItems
                     }
-                        ! [ sendBill <| putRequest newBill]
+                        ! [ sendBill <| putRequest newBill ]
 
             SaveBill (Ok remoteBill) ->
                 { model | bill = remoteBill } ! []
 
-            SaveBill (Err e) -> handleError model e
-            RefreshBill time -> 
-                 model  ! [Http.send SaveBill <| Http.get urlBase decodeBill]
+            SaveBill (Err e) ->
+                handleError model e
+
+            RefreshBill time ->
+                model ! [ Http.send SaveBill <| Http.get urlBase decodeBill ]
+
+            NameUpdate name ->
+                { model | name = name } ! []
+
+            SaveName ->
+                { model | named = True } ! []
+
             _ ->
                 model ! []
+
 
 ownerOf item =
     case item.claim of
@@ -190,7 +211,7 @@ encodeItem item =
 
 encodeBill bill =
     Dict.toList bill
-        |> List.map (\(string, item) -> ( string, encodeItem item ))
+        |> List.map (\( string, item ) -> ( string, encodeItem item ))
         |> E.object
 
 
@@ -241,7 +262,7 @@ view model =
                 , Chip.deleteClick (ToggleClaim item.description)
                 ]
                 [ Chip.content []
-                    [ text (item.description ++ " $" ++ toString item.price) ]
+                    [ text (" $" ++ toString item.price ++ " " ++ item.description) ]
                 ]
 
         common =
@@ -278,10 +299,61 @@ view model =
                     ]
                 , drawer = []
                 , tabs = ( [], [] )
-                , main =
-                    [ viewBody model
-                    ]
+                , main = mainView model
                 }
+
+
+mainView model =
+    let
+        name item =
+            case item of
+                ClaimedBy name ->
+                    Just name
+
+                Unclaimed ->
+                    Nothing
+
+        names =
+            Dict.toList model.bill
+                |> List.filterMap (Tuple.second >> .claim >> name)
+                |> Debug.log "Names: "
+
+        repeatedName =
+            List.member (Debug.log "Name : " model.name) names
+
+        namePick =
+            Textfield.render Mdl
+                [ 4 ]
+                model.mdl
+                [ Options.onInput NameUpdate
+                , Textfield.error ("Name Taken")
+                    |> Options.when repeatedName
+                ]
+                []
+    in
+        if model.named then
+            [ viewBody model ]
+        else
+            [ Grid.grid []
+                [ Grid.cell
+                    []
+                    [ namePick
+                    , Button.render Mdl
+                        [ 9, 0, 0, 1 ]
+                        model.mdl
+                        [ Button.ripple
+                        , Button.colored
+                        , Button.raised
+                        , if repeatedName || model.name == "" then
+                            Button.disabled
+                          else
+                            Button.raised
+                        , Options.onClick SaveName
+                        ]
+                        [ text "Split the Bill" ]
+                    ]
+                ]
+            ]
 
 
 viewBody : Model -> Html Msg
