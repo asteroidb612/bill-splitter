@@ -26,7 +26,6 @@ import FormatNumber exposing (format)
 import FormatNumber.Locales exposing (usLocale)
 import Material.Chip as Chip
 
-
 main =
     program
         { init = { name = "", owed = 0, bill = defaultDict, mdl = Material.model, claimedItems = [], message = "", named = False } ! []
@@ -100,22 +99,22 @@ type Msg
     | SaveName
 
 
-handleError model e =
-    case e of
-        Http.Timeout ->
-            { model | message = "timeout" } ! []
-
-        Http.NetworkError ->
-            { model | message = "network error" } ! []
-
-        Http.BadUrl x ->
-            { model | message = "badurl:\n" ++ x } ! []
-
-        Http.BadStatus x ->
-            { model | message = "badstatus:\n" ++ (toString x) } ! []
-
-        Http.BadPayload x y ->
-            { model | message = "badpayload:\n" ++ x ++ "\n" ++ (toString y) } ! []
+handleError model e = model ! []
+--    case e of
+--        Http.Timeout ->
+--            { model | message = "timeout" } ! []
+--
+--        Http.NetworkError ->
+--            { model | message = "network error" } ! []
+--
+--        Http.BadUrl x ->
+--            { model | message = "badurl:\n" ++ x } ! []
+--
+--        Http.BadStatus x ->
+--            { model | message = "badstatus:\n" ++ (toString x) } ! []
+--
+--        Http.BadPayload x y ->
+--            { model | message = "badpayload:\n" ++ x ++ "\n" ++ (toString y) } ! []
 
 
 update msg model =
@@ -276,7 +275,11 @@ view model =
 
         topText =
             if List.isEmpty model.claimedItems then
-                h3 [] [ text "Mary's Birthday Dinner at the Halford" ]
+                div [] [h3 [] [ text "Mary's Birthday Dinner at the Halford" ]
+                       , if model.named
+                         then h4 [] [ text "What did you have?"]
+                         else h4 [] [ text "Enter a name:"]
+                       ]
             else
                 div []
                     [ text model.message
@@ -284,7 +287,16 @@ view model =
                     , spot <| "+ 9% Sales Tax = "
                     , num <| "$" ++ format usLocale (model.owed * 1.09)
                     , spot <| "+ 18% Gratuity ="
-                    , num <| "$" ++ format usLocale (model.owed * 1.18 * 1.09)
+                    ,  Button.render Mdl
+                        [ 9, 0, 0, 1 ]
+                        model.mdl
+                        [ Button.ripple
+                        , Button.colored
+                        , Button.raised
+                        , Button.link  <|
+                               "https://venmo.com/?txn=pay&note=Mary%27s%20Dinner&amount=" ++ format usLocale (model.owed * 1.18 * 1.09)
+                        ]
+                        [ text <| "Venmo $" ++ format usLocale (model.owed * 1.18 * 1.09)  ]
                     ]
     in
         Material.Scheme.topWithScheme Color.Teal Color.LightGreen <|
@@ -293,7 +305,7 @@ view model =
                 [ Layout.fixedHeader
                 ]
                 { header =
-                    [ div [ style [ ( "padding", "2rem" ) ] ] <|
+                    [ div [ style [ ( "padding", "1rem" ) ] ] <|
                         topText
                             :: List.map chip model.claimedItems
                     ]
@@ -347,10 +359,10 @@ mainView model =
                         , if repeatedName || model.name == "" then
                             Button.disabled
                           else
-                            Button.raised
+                            Options.nop
                         , Options.onClick SaveName
                         ]
-                        [ text "Split the Bill" ]
+                        [ text "Pick what you ordered" ]
                     ]
                 ]
             ]
@@ -378,7 +390,7 @@ viewBody model =
                 ClaimedBy name ->
                     if name == model.name then
                         Lists.li []
-                            [ Lists.content [] [ text item.description ]
+                            [ Lists.content [Options.css "text-decoration" "underline"] [ text item.description ]
                             , Lists.content2 []
                                 [ Toggles.checkbox Mdl
                                     [ 4 ]
@@ -390,7 +402,7 @@ viewBody model =
                                 ]
                             ]
                     else
-                        Lists.li [] [ Lists.content [] [ text item.description ] ]
+                        Lists.li [] [ Lists.content [Options.css "text-decoration" "line-through"] [ text item.description ] ]
     in
         (List.map itemRow (Dict.values model.bill))
             |> Lists.ul []
