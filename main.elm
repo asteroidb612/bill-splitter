@@ -278,7 +278,7 @@ view model =
                 div [] [h3 [] [ text "Mary's Birthday Dinner at the Halford" ]
                        , if model.named
                          then h4 [] [ text "What did you have?"]
-                         else h4 [] [ text "Enter a name:"]
+                         else h4 [] [ ]
                        ]
             else
                 div []
@@ -345,29 +345,26 @@ mainView model =
     in
         if model.named then
             [ viewBody model ]
-        else
-            [ Grid.grid []
-                [ Grid.cell
-                    []
-                    [ namePick
-                    , Button.render Mdl
-                        [ 9, 0, 0, 1 ]
-                        model.mdl
-                        [ Button.ripple
-                        , Button.colored
-                        , Button.raised
-                        , if repeatedName || model.name == "" then
-                            Button.disabled
-                          else
-                            Options.nop
-                        , Options.onClick SaveName
-                        ]
-                        [ text "Pick what you ordered" ]
-                    ]
-                ]
-            ]
-
-
+        else [Lists.ul []
+                     [Lists.li [] [namePick]
+                     , Lists.li []
+                         [ Button.render Mdl
+                             [ 9, 0, 0, 1 ]
+                                 model.mdl
+                                     [ Button.ripple
+                                     , Button.colored
+                                     , Button.raised
+                                     , if repeatedName || model.name == "" then
+                                           Button.disabled
+                                       else
+                                           Options.nop
+                                     , Options.onClick SaveName
+                                     ]
+                                 [ text <| if model.name == "" then "Enter your name " else  "Pick what you ordered" ]
+                         ]
+                     ]
+             ]
+            
 viewBody : Model -> Html Msg
 viewBody model =
     let

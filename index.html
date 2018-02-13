@@ -16992,17 +16992,24 @@ var _user$project$Main$mainView = function (model) {
 	} : {
 		ctor: '::',
 		_0: A2(
-			_debois$elm_mdl$Material_Grid$grid,
+			_debois$elm_mdl$Material_List$ul,
 			{ctor: '[]'},
 			{
 				ctor: '::',
 				_0: A2(
-					_debois$elm_mdl$Material_Grid$cell,
+					_debois$elm_mdl$Material_List$li,
 					{ctor: '[]'},
 					{
 						ctor: '::',
 						_0: namePick,
-						_1: {
+						_1: {ctor: '[]'}
+					}),
+				_1: {
+					ctor: '::',
+					_0: A2(
+						_debois$elm_mdl$Material_List$li,
+						{ctor: '[]'},
+						{
 							ctor: '::',
 							_0: A5(
 								_debois$elm_mdl$Material_Button$render,
@@ -17048,13 +17055,14 @@ var _user$project$Main$mainView = function (model) {
 								},
 								{
 									ctor: '::',
-									_0: _elm_lang$html$Html$text('Pick what you ordered'),
+									_0: _elm_lang$html$Html$text(
+										_elm_lang$core$Native_Utils.eq(model.name, '') ? 'Enter your name ' : 'Pick what you ordered'),
 									_1: {ctor: '[]'}
 								}),
 							_1: {ctor: '[]'}
-						}
-					}),
-				_1: {ctor: '[]'}
+						}),
+					_1: {ctor: '[]'}
+				}
 			}),
 		_1: {ctor: '[]'}
 	};
@@ -17136,11 +17144,7 @@ var _user$project$Main$view = function (model) {
 					}) : A2(
 					_elm_lang$html$Html$h4,
 					{ctor: '[]'},
-					{
-						ctor: '::',
-						_0: _elm_lang$html$Html$text('Enter a name:'),
-						_1: {ctor: '[]'}
-					}),
+					{ctor: '[]'}),
 				_1: {ctor: '[]'}
 			}
 		}) : A2(
